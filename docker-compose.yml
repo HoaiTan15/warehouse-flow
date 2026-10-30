@@ -1,0 +1,60 @@
+services:
+  # Local development search engine. Application connects through localhost:9200.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.7
+    container_name: quanlykhohang_elasticsearch
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9200:9200"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+    networks:
+      - quanlykhohang_network
+  # MongoDB Service
+  mongodb:
+    image: mongo:4.4
+    container_name: quanlykhohang_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: quanlykhohang_nosql
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongodb-init:/docker-entrypoint-initdb.d
+    networks:
+      - quanlykhohang_network
+
+  # Redis Service
+  redis:
+    image: redis:6.2-alpine
+    container_name: quanlykhohang_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - quanlykhohang_network
+
+volumes:
+  elasticsearch_data:
+    driver: local
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  quanlykhohang_network:
+    driver: bridge

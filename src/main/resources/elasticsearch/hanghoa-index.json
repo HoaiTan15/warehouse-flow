@@ -1,0 +1,32 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "char_filter": {
+        "vietnamese_d": {"type": "mapping", "mappings": ["đ => d", "Đ => D"]}
+      },
+      "analyzer": {
+        "vietnamese_folded": {
+          "type": "custom", "char_filter": ["vietnamese_d"],
+          "tokenizer": "standard", "filter": ["lowercase", "asciifolding"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "maHang": {"type": "keyword", "fields": {"text": {"type": "text", "analyzer": "vietnamese_folded"}}},
+      "tenHang": {"type": "text", "analyzer": "vietnamese_folded"},
+      "tenLoai": {"type": "text", "analyzer": "vietnamese_folded"},
+      "tenViTri": {"type": "text", "analyzer": "vietnamese_folded"},
+      "quyCach": {"type": "text", "analyzer": "vietnamese_folded"},
+      "dvt": {"type": "keyword"},
+      "maLoai": {"type": "keyword"},
+      "maViTri": {"type": "keyword"},
+      "soLuongTonKho": {"type": "integer"},
+      "hanMucTonToiThieu": {"type": "integer"}
+    }
+  }
+}
