@@ -106,6 +106,11 @@
         </div>
 
         <div class="content-body">
+            <% if ("success".equals(request.getParameter("msg"))) { %>
+                <div style="background:#dff3e4;color:#176b36;padding:14px;margin-bottom:18px;border-radius:6px;">
+                    Lưu phiếu xuất thành công. Phiếu đang chờ duyệt.
+                </div>
+            <% } %>
             <div class="card">
                 <div class="page-title">Danh Sách Đề Nghị Xuất Kho</div>
                 

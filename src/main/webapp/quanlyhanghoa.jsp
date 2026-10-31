@@ -3,6 +3,13 @@
 <%@ page import="java.util.Map" %>
 <%@ page import="model.HangHoa" %>
 <%@ page import="model.taikhoan" %>
+<%!
+    private String htmlAttr(String value) {
+        if (value == null) return "";
+        return value.replace("&", "&amp;").replace("\"", "&quot;")
+                .replace("'", "&#39;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+%>
 <%
     taikhoan acc = (taikhoan) session.getAttribute("account");
     if(acc == null) { response.sendRedirect("login.jsp"); return; }
@@ -99,9 +106,37 @@
         </div>
 
         <div class="content-body">
-            <% if(request.getParameter("error") != null) { %>
+            <%
+                String error = request.getParameter("error");
+                String errorMessage = null;
+                if ("invalid".equals(error)) {
+                    errorMessage = "Số lượng và mức tồn cảnh báo phải là số nguyên không âm. Vui lòng kiểm tra lại.";
+                } else if ("add".equals(error)) {
+                    errorMessage = "Không thể thêm sản phẩm. Vui lòng kiểm tra kết nối cơ sở dữ liệu, danh mục và vị trí kho.";
+                } else if ("edit".equals(error)) {
+                    errorMessage = "Không thể cập nhật sản phẩm. Vui lòng kiểm tra sản phẩm còn tồn tại và kết nối cơ sở dữ liệu.";
+                } else if ("stock".equals(error)) {
+                    errorMessage = "Không thể xóa sản phẩm vẫn còn tồn kho.";
+                } else if ("related".equals(error)) {
+                    errorMessage = "Không thể xóa sản phẩm đã có phiếu nhập, xuất hoặc lịch sử liên quan.";
+                } else if ("delete".equals(error)) {
+                    errorMessage = "Không thể xóa sản phẩm. Vui lòng kiểm tra mã hàng và kết nối cơ sở dữ liệu.";
+                } else if (error != null) {
+                    errorMessage = "Không thể lưu thay đổi. Vui lòng thử lại hoặc kiểm tra nhật ký máy chủ.";
+                }
+                String success = request.getParameter("success");
+                String successMessage = "add".equals(success) ? "Thêm sản phẩm thành công."
+                        : "edit".equals(success) ? "Cập nhật sản phẩm thành công."
+                        : "delete".equals(success) ? "Xóa sản phẩm thành công." : null;
+            %>
+            <% if(errorMessage != null) { %>
                 <div style="color: white; background: #e74c3c; padding: 15px; border-radius: 4px; margin-bottom: 15px; font-weight: bold;">
-                    ⚠️ <%= request.getParameter("error") %>
+                    ⚠️ <%= errorMessage %>
+                </div>
+            <% } %>
+            <% if(successMessage != null) { %>
+                <div style="color: white; background: #27ae60; padding: 15px; border-radius: 4px; margin-bottom: 15px; font-weight: bold;">
+                    <%= successMessage %>
                 </div>
             <% } %>
 
@@ -118,8 +153,8 @@
                         <% if (isManager) { %>
                         <button class="btn btn-add-product" onclick="moModalThem()">+ Thêm Sản Phẩm</button>
                         <% } %>
-                        <a href="lapphieunhap.jsp" class="btn btn-import">+ Lập Phiếu Nhập</a>
-                        <a href="lapphieuxuat.jsp" class="btn btn-export">- Lập Phiếu Xuất</a>
+                        <a href="LapPhieuNhapServlet" class="btn btn-import">+ Lập Phiếu Nhập</a>
+                        <a href="LapPhieuXuatServlet" class="btn btn-export">- Lập Phiếu Xuất</a>
                     </div>
                 </div>
 
@@ -151,8 +186,8 @@
                             <td><%= hh.getDvt() %></td>
                             <td>
                                 <% if (isManager) { %>
-                                <button class="btn btn-edit" onclick="moModalSua('<%= hh.getMaHang() %>', '<%= hh.getTenHang() %>', '<%= hh.getDvt() %>', '<%= hh.getSoLuongTonKho() %>', '<%= hh.getQuyCach() %>', '<%= hh.getHanMucTonToiThieu() %>', '<%= hh.getMaLoai() %>', '<%= hh.getMaViTri() %>')">Sửa</button>
-                                <button class="btn btn-delete" onclick="xacNhanXoa('<%= hh.getMaHang() %>', '<%= hh.getTenHang() %>', <%= hh.getSoLuongTonKho() %>)">Xóa</button>
+                                <button type="button" class="btn btn-edit" data-ma="<%= htmlAttr(hh.getMaHang()) %>" data-ten="<%= htmlAttr(hh.getTenHang()) %>" data-dvt="<%= htmlAttr(hh.getDvt()) %>" data-soluong="<%= hh.getSoLuongTonKho() %>" data-quycach="<%= htmlAttr(hh.getQuyCach()) %>" data-hanmuc="<%= hh.getHanMucTonToiThieu() %>" data-maloai="<%= htmlAttr(hh.getMaLoai()) %>" data-mavitri="<%= htmlAttr(hh.getMaViTri()) %>" onclick="moModalSua(this)">Sửa</button>
+                                <button type="button" class="btn btn-delete" data-ma="<%= htmlAttr(hh.getMaHang()) %>" data-ten="<%= htmlAttr(hh.getTenHang()) %>" data-soluong="<%= hh.getSoLuongTonKho() %>" onclick="xacNhanXoa(this)">Xóa</button>
                                 <% } %>
                                 <a href="KiemKeServlet?maHang=<%= hh.getMaHang() %>" class="btn btn-inventory">Kiểm Kê</a>
                             </td>
@@ -240,7 +275,8 @@
             document.getElementById('hhModal').style.display = "flex";
         }
 
-        function moModalSua(ma, ten, dvt, soluong, quycach, hanmuc, maloai, mavitri) {
+        function moModalSua(button) {
+            const { ma, ten, dvt, soluong, quycach, hanmuc, maloai, mavitri } = button.dataset;
             document.getElementById('modalTitle').innerText = "Cập Nhật Sản Phẩm";
             document.getElementById('formAction').value = "edit";
             document.getElementById('btnSubmit').innerText = "✔ Lưu Cập Nhật";
@@ -258,14 +294,14 @@
             document.getElementById('hhModal').style.display = "flex";
         }
 
-        // LOGIC CHẶN XÓA TỪ PHÍA GIAO DIỆN NẾU TỒN KHO >= 10
-        function xacNhanXoa(ma, ten, soLuong) {
-            if (soLuong >= 10) {
-                alert("⛔ KHÔNG THỂ XÓA!\nChỉ được phép xóa các sản phẩm có số lượng tồn kho dưới 10.");
+        function xacNhanXoa(button) {
+            const { ma, ten, soluong } = button.dataset;
+            if (Number(soluong) > 0) {
+                alert("Không thể xóa sản phẩm vẫn còn tồn kho. Hãy đưa tồn kho về 0 trước.");
                 return;
             }
-            if(confirm("Bạn có chắc chắn muốn xóa sản phẩm '" + ten + "' (Tồn kho: " + soLuong + ") không?")) {
-                window.location.href = "QuanLyHangHoaServlet?action=delete&id=" + ma + "&sl=" + soLuong;
+            if(confirm("Bạn có chắc chắn muốn xóa sản phẩm '" + ten + "' (Tồn kho: " + soluong + ") không?")) {
+                window.location.href = "QuanLyHangHoaServlet?action=delete&id=" + encodeURIComponent(ma);
             }
         }
 

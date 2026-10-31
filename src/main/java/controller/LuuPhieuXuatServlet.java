@@ -30,7 +30,6 @@ public class LuuPhieuXuatServlet extends HttpServlet {
         }
 
         // 2. Lấy thông tin chung của Phiếu Xuất từ form
-        String maPhieu = request.getParameter("maPhieu");
         String ngayLapStr = request.getParameter("ngayLap");
         String maDeNghi = request.getParameter("maDeNghi");
         String boPhanNhan = request.getParameter("boPhanNhan");
@@ -44,13 +43,13 @@ public class LuuPhieuXuatServlet extends HttpServlet {
         // Chặn lỗi: Nếu Thủ kho chưa thêm mặt hàng nào mà đã bấm Lưu
         if (maHangArr == null || maHangArr.length == 0) {
             request.setAttribute("thongBaoLoi", "Vui lòng thêm ít nhất 1 mặt hàng vào danh sách xuất!");
-            request.getRequestDispatcher("lapphieuxuat.jsp").forward(request, response);
+            request.getRequestDispatcher("LapPhieuXuatServlet").forward(request, response);
             return;
         }
 
         // 4. Gói dữ liệu vào Model
         PhieuXuatKho px = new PhieuXuatKho();
-        px.setMaPhieu(maPhieu);
+        // Mã chính thức được DAO cấp khi lưu trong giao dịch SQL.
         px.setNgayLap(Date.valueOf(ngayLapStr)); // Chuyển chuỗi ngày sang kiểu Date của SQL
         px.setMaDeNghi(maDeNghi);
         px.setBoPhanNhan(boPhanNhan);
@@ -63,11 +62,11 @@ public class LuuPhieuXuatServlet extends HttpServlet {
         // 6. Xử lý kết quả trả về từ SQL
         if ("SUCCESS".equals(ketQua)) {
             // LƯU THÀNH CÔNG: Chuyển thẳng sang trang Quản lý xuất kho kèm thông báo
-            response.sendRedirect("LoadDanhSachPhieuXuatServlet?msg=success");
+            response.sendRedirect("QuanLyDanhSachXuatServlet?msg=success");
         } else {
             // THẤT BẠI (Vd: kho thiếu hàng): Ở lại trang cũ và in lỗi đỏ ra màn hình
             request.setAttribute("thongBaoLoi", ketQua);
-            request.getRequestDispatcher("lapphieuxuat.jsp").forward(request, response);
+            request.getRequestDispatcher("LapPhieuXuatServlet").forward(request, response);
         }
     }
 }

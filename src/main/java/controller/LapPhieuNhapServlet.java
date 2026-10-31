@@ -19,9 +19,11 @@ public class LapPhieuNhapServlet extends HttpServlet {
         if (acc == null) { response.sendRedirect("login.jsp"); return; }
 
         // TỰ ĐỘNG SINH MÃ PHIẾU NHẬP
-        String timeStamp = new java.text.SimpleDateFormat("yyMMdd_HHmmss").format(new java.util.Date());
-        String maPhieuAuto = "PN_" + timeStamp;
-        request.setAttribute("maPhieuAuto", maPhieuAuto);
+        try {
+            request.setAttribute("maPhieuAuto", new PhieuNhapDAO().maPhieuTiepTheo());
+        } catch (Exception e) {
+            request.setAttribute("thongBaoLoi", "Không lấy được mã phiếu nhập: " + e.getMessage());
+        }
 
         // Load danh sách Hàng Hóa và Nhà Cung Cấp
         request.setAttribute("danhSachHH", new HangHoaDAO().getAllHangHoa());

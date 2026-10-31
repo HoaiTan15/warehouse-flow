@@ -1,6 +1,8 @@
 package model;
 
 import java.sql.Date;
+import java.util.ArrayList;
+import java.util.List;
 
 public class PhieuNhapDTO {
     private String maPhieu;
@@ -11,6 +13,7 @@ public class PhieuNhapDTO {
     private double donGia;
     private String maNguoiDuyet;
     private String ghiChu;
+    private final List<PhieuNhapDTO> chiTiet = new ArrayList<>();
     
     public PhieuNhapDTO() {}
 
@@ -47,4 +50,5 @@ public class PhieuNhapDTO {
     public void setMaNguoiDuyet(String maNguoiDuyet) { this.maNguoiDuyet = maNguoiDuyet; }
     public String getGhiChu() { return ghiChu; }
     public void setGhiChu(String ghiChu) { this.ghiChu = ghiChu; }
+    public List<PhieuNhapDTO> getChiTiet() { return chiTiet; }
 }

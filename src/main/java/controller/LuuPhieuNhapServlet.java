@@ -26,7 +26,7 @@ public class LuuPhieuNhapServlet extends HttpServlet {
         }
 
         PhieuNhapKho pn = new PhieuNhapKho();
-        pn.setMaPhieu(request.getParameter("maPhieu"));
+        // DAO cấp mã trong cùng giao dịch với INSERT để tránh hai biểu mẫu dùng trùng mã.
         pn.setNgayLap(Date.valueOf(request.getParameter("ngayLap")));
         pn.setMaNCC(request.getParameter("maNCC"));
         pn.setSoHoaDon(request.getParameter("soHoaDon"));

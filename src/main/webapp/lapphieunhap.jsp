@@ -7,6 +7,11 @@
    // 1. KÉO THÔNG TIN TÀI KHOẢN TỪ SESSION
     taikhoan acc = (taikhoan) session.getAttribute("account");
     if(acc == null) { response.sendRedirect("login.jsp"); return; }
+    if (request.getAttribute("danhSachHH") == null || request.getAttribute("danhSachNCC") == null
+            || request.getAttribute("maPhieuAuto") == null) {
+        request.getRequestDispatcher("LapPhieuNhapServlet").forward(request, response);
+        return;
+    }
      // 2. LOGIC PHÂN QUYỀN
     String role = acc.getVaiTro() != null ? acc.getVaiTro() : "";
   

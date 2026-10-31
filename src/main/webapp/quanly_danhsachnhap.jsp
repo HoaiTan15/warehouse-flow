@@ -159,11 +159,14 @@
                                             data-maphieu="<%= pn.getMaPhieu() %>"
                                             data-ngaylap="<%= pn.getNgayLap() %>"
                                             data-ncc="<%= pn.getTenNCC() %>"
-                                            data-tenhang="<%= pn.getTenHang() %>"
-                                            data-soluong="<%= pn.getSoLuong() %>"
-                                            data-dongia="<%= pn.getDonGia() %>"
                                             data-ghichu="<%= pn.getGhiChu() != null ? pn.getGhiChu() : "" %>">
                                         👁 Xem chi tiết
+                                        <% for (PhieuNhapDTO item : pn.getChiTiet()) { %>
+                                            <span class="chi-tiet-hang" hidden
+                                                  data-tenhang="<%= item.getTenHang().replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;") %>"
+                                                  data-soluong="<%= item.getSoLuong() %>"
+                                                  data-dongia="<%= item.getDonGia() %>"></span>
+                                        <% } %>
                                     </button>
                                 <% } %>
                             </td>
@@ -189,9 +192,9 @@
                 <p><strong>Ngày Đề Nghị:</strong> <span id="md-ngayLap"></span></p>
                 <p><strong>Nhà Cung Cấp:</strong> <span id="md-ncc"></span></p>
                 <hr>
-                <p><strong>📦 Sản Phẩm:</strong> <span id="md-tenHang" style="font-weight: bold;"></span></p>
-                <p><strong>Số Lượng:</strong> <span id="md-soLuong"></span></p>
-                <p><strong>Đơn Giá:</strong> <span id="md-donGia"></span></p>
+                <p><strong>📦 Sản Phẩm:</strong> <span id="md-tenHang" style="font-weight: bold; white-space: pre-line;"></span></p>
+                <p><strong>Số Lượng:</strong> <span id="md-soLuong" style="white-space: pre-line;"></span></p>
+                <p><strong>Đơn Giá:</strong> <span id="md-donGia" style="white-space: pre-line;"></span></p>
                 <p><strong>Thành Tiền:</strong> <span id="md-thanhTien" style="color: #e74c3c; font-weight: bold; font-size: 16px;"></span></p>
                 <hr>
                 <p><strong>Ghi chú / Lý do:</strong> <span id="md-ghiChu" style="font-style: italic; color: #555;"></span></p>
@@ -226,15 +229,12 @@
                 document.getElementById('md-maPhieu').innerText = this.getAttribute('data-maphieu');
                 document.getElementById('md-ngayLap').innerText = this.getAttribute('data-ngaylap');
                 document.getElementById('md-ncc').innerText = this.getAttribute('data-ncc');
-                document.getElementById('md-tenHang').innerText = this.getAttribute('data-tenhang');
-                
-                let soLuong = parseFloat(this.getAttribute('data-soluong'));
-                let donGia = parseFloat(this.getAttribute('data-dongia'));
-                
-                // Format số tiền VNĐ cho đẹp mắt
-                document.getElementById('md-soLuong').innerText = soLuong;
-                document.getElementById('md-donGia').innerText = new Intl.NumberFormat('vi-VN').format(donGia) + " VNĐ";
-                document.getElementById('md-thanhTien').innerText = new Intl.NumberFormat('vi-VN').format(soLuong * donGia) + " VNĐ";
+                const items = [...this.querySelectorAll('.chi-tiet-hang')];
+                document.getElementById('md-tenHang').innerText = items.map(i => i.dataset.tenhang).join('\n');
+                document.getElementById('md-soLuong').innerText = items.map(i => i.dataset.soluong).join('\n');
+                document.getElementById('md-donGia').innerText = items.map(i => new Intl.NumberFormat('vi-VN').format(Number(i.dataset.dongia)) + ' VNĐ').join('\n');
+                const tongTien = items.reduce((sum, i) => sum + Number(i.dataset.soluong) * Number(i.dataset.dongia), 0);
+                document.getElementById('md-thanhTien').innerText = new Intl.NumberFormat('vi-VN').format(tongTien) + " VNĐ";
                 
                 let ghiChu = this.getAttribute('data-ghichu');
                 document.getElementById('md-ghiChu').innerText = ghiChu ? ghiChu : "Không có ghi chú nào.";

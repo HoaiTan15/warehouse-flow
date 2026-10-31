@@ -42,7 +42,9 @@ public class LoadDanhSachKhoServlet extends HttpServlet {
         }
 
         // Đẩy danh sách Hàng hóa, Loại hàng, Vị trí lên JSP
-        request.setAttribute("listHH", dao.getAllHangHoa());
+        java.util.List<HangHoa> hangHoa = dao.getAllHangHoa();
+        dao.dongBoHoSoHangHoa(hangHoa);
+        request.setAttribute("listHH", hangHoa);
         request.setAttribute("mapLoai", dao.getMapLoaiHang());
         request.setAttribute("mapViTri", dao.getMapViTriKho());
         request.getRequestDispatcher("quanlyhanghoa.jsp").forward(request, response);

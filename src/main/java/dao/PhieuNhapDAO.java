@@ -11,6 +11,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Locale;
 
 public class PhieuNhapDAO {
     private NhatKyThaoTacRepository nhatKyRepo;
@@ -63,6 +66,7 @@ public class PhieuNhapDAO {
             // Dùng DBConnect
             conn = DBConnect.getConnection();
             conn.setAutoCommit(false); // Bắt đầu Transaction
+            pn.setMaPhieu(taoMaPhieu(conn));
 
             // Bước 1: Lưu thông tin phiếu (MaNguoiDuyet = NULL để chờ duyệt)
             String sqlPhieu = "INSERT INTO PhieuNhapKho (MaPhieu, NgayLap, MaNV, MaNCC, SoHoaDon, GhiChu, MaNguoiDuyet) "
@@ -107,6 +111,7 @@ public class PhieuNhapDAO {
             }
             return "Lỗi CSDL: " + e.getMessage();
         } catch (Exception e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException rollbackError) { e.addSuppressed(rollbackError); }
             if (nhatKyRepo != null) {
                 nhatKyRepo.ghiNhatKy("LAP_PHIEU_NHAP", pn.getMaPhieu(), tenDangNhapThuKho,
                     "THAT_BAI", "Lỗi hệ thống: " + e.getMessage());
@@ -121,7 +126,7 @@ public class PhieuNhapDAO {
     // 4. LẤY DANH SÁCH PHIẾU NHẬP 
     // ==============================================================================
     public List<model.PhieuNhapDTO> getDanhSachPhieuNhap(String tuKhoa) {
-        List<model.PhieuNhapDTO> list = new ArrayList<>();
+        Map<String, model.PhieuNhapDTO> theoMa = new LinkedHashMap<>();
         String sql = "SELECT pn.MaPhieu, pn.NgayLap, ncc.TenNCC, hh.TenHang, ct.SoLuong, ct.DonGia, pn.MaNguoiDuyet, pn.GhiChu "
                    + "FROM PhieuNhapKho pn "
                    + "JOIN NhaCungCap ncc ON pn.MaNCC = ncc.MaNCC "
@@ -155,25 +160,50 @@ public class PhieuNhapDAO {
                             rs.getString("MaNguoiDuyet"),
                             rs.getString("GhiChu") 
                         );
-                        list.add(dto);
+                        model.PhieuNhapDTO phieu = theoMa.get(dto.getMaPhieu());
+                        if (phieu == null) {
+                            phieu = dto;
+                            theoMa.put(dto.getMaPhieu(), phieu);
+                        }
+                        phieu.getChiTiet().add(dto);
                     }
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return list;
+        return new ArrayList<>(theoMa.values());
+    }
+
+    public String maPhieuTiepTheo() throws Exception {
+        try (Connection conn = DBConnect.getConnection()) {
+            return taoMaPhieu(conn);
+        }
+    }
+
+    private String taoMaPhieu(Connection conn) throws SQLException {
+        int max = 0;
+        String sql = "SELECT MaPhieu FROM PhieuNhapKho WITH (UPDLOCK, HOLDLOCK)";
+        try (PreparedStatement ps = conn.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String ma = rs.getString(1);
+                if (ma != null && ma.matches("PN[0-9]{3}"))
+                    max = Math.max(max, Integer.parseInt(ma.substring(2)));
+            }
+        }
+        if (max >= 999) throw new SQLException("Đã hết mã phiếu nhập PN001-PN999");
+        return String.format(Locale.ROOT, "PN%03d", max + 1);
     }
     // ==============================================================================
     // 5. DUYỆT PHIẾU NHẬP
     // ==============================================================================
     public void duyetPhieu(String maPhieu, String tenDangNhapNguoiDuyet) {
-        String sql = "UPDATE PhieuNhapKho SET MaNguoiDuyet = (SELECT MaNV FROM TaiKhoan WHERE TenDangNhap = ?) WHERE MaPhieu = ?";
+        String sql = "UPDATE PhieuNhapKho SET MaNguoiDuyet = (SELECT MaNV FROM TaiKhoan WHERE TenDangNhap = ?) WHERE MaPhieu = ? AND MaNguoiDuyet IS NULL";
         try (Connection conn = DBConnect.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, tenDangNhapNguoiDuyet);
             ps.setString(2, maPhieu);
-            ps.executeUpdate();
+            if (ps.executeUpdate() != 1) return;
 
             CacheService.invalidateHangHoaCache();
 
@@ -194,13 +224,13 @@ public class PhieuNhapDAO {
     // 6. TỪ CHỐI PHIẾU NHẬP
     // ==============================================================================
     public void tuChoiPhieu(String maPhieu, String tenDangNhapNguoiDuyet, String ghiChu) {
-        String sql = "UPDATE PhieuNhapKho SET MaNguoiDuyet = (SELECT MaNV FROM TaiKhoan WHERE TenDangNhap = ?), GhiChu = ? WHERE MaPhieu = ?";
+        String sql = "UPDATE PhieuNhapKho SET MaNguoiDuyet = (SELECT MaNV FROM TaiKhoan WHERE TenDangNhap = ?), GhiChu = ? WHERE MaPhieu = ? AND MaNguoiDuyet IS NULL";
         try (Connection conn = DBConnect.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, tenDangNhapNguoiDuyet);
             ps.setString(2, ghiChu);
             ps.setString(3, maPhieu);
-            ps.executeUpdate();
+            if (ps.executeUpdate() != 1) return;
 
             if (nhatKyRepo != null) {
                 nhatKyRepo.ghiNhatKy("TU_CHOI_PHIEU_NHAP", maPhieu, tenDangNhapNguoiDuyet,

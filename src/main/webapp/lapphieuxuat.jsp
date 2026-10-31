@@ -6,6 +6,10 @@
    // 1. KÉO THÔNG TIN TÀI KHOẢN TỪ SESSION 
     taikhoan acc = (taikhoan) session.getAttribute("account");
     if(acc == null) { response.sendRedirect("login.jsp"); return; }
+    if (request.getAttribute("danhSachHH") == null || request.getAttribute("maPhieuAuto") == null) {
+        request.getRequestDispatcher("LapPhieuXuatServlet").forward(request, response);
+        return;
+    }
     
     // 2. LOGIC PHÂN QUYỀN
     String role = acc.getVaiTro() != null ? acc.getVaiTro() : "";
@@ -217,7 +221,7 @@
 
                 <div class="action-footer">
                     <a href="LoadDanhSachKhoServlet" class="btn btn-secondary">Hủy Bỏ</a>
-                    <button type="button" onclick="kiemTraVaSubmit()" class="btn btn-primary">💾 Lưu Phiếu Xuất (Chờ Duyệt)</button>
+                    <button type="button" id="btnLuuPhieuXuat" onclick="kiemTraVaSubmit()" class="btn btn-primary">💾 Lưu Phiếu Xuất (Chờ Duyệt)</button>
                 </div>
 
             </form>
@@ -293,6 +297,9 @@
             if(soLuongHangTrongBang === 0) {
                 alert("Lỗi: Bạn chưa thêm mặt hàng nào vào danh sách xuất!");
             } else {
+                var button = document.getElementById('btnLuuPhieuXuat');
+                if (button.disabled) return;
+                button.disabled = true;
                 document.getElementById('formPhieuXuat').submit();
             }
         }

@@ -5,6 +5,7 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
 import org.bson.Document;
 import org.bson.types.ObjectId;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import model.HangHoa;
 
 public class HoSoHangHoaRepository {
     private static final String COLLECTION_NAME = "ho_so_hang_hoa";
@@ -121,5 +123,49 @@ public class HoSoHangHoaRepository {
             System.err.println("Failed to get all ho so: " + e.getMessage());
         }
         return result;
+    }
+
+    public void dongBoHangHoa(HangHoa hang, boolean chiTaoMoi) {
+        if (collection == null || hang == null || hang.getMaHang() == null) return;
+        Document moRong = new Document("donViTinh", hang.getDvt())
+                .append("maLoai", hang.getMaLoai())
+                .append("maViTri", hang.getMaViTri())
+                .append("hanMucTonToiThieu", hang.getHanMucTonToiThieu());
+        String moTa = hang.getTenHang() + (hang.getQuyCach() == null || hang.getQuyCach().trim().isEmpty()
+                ? "" : " - " + hang.getQuyCach());
+        Document duLieu = new Document("maHang", hang.getMaHang())
+                .append("tenHang", hang.getTenHang())
+                .append("moTaChiTiet", moTa)
+                .append("thuocTinhMoRong", moRong)
+                .append("ngayCapNhat", new Date());
+        try {
+            if (chiTaoMoi) {
+                duLieu.append("tags", new ArrayList<String>());
+                collection.updateOne(Filters.eq("maHang", hang.getMaHang()),
+                        new Document("$setOnInsert", duLieu), new UpdateOptions().upsert(true));
+            } else {
+                duLieu.remove("maHang");
+                duLieu.remove("thuocTinhMoRong");
+                duLieu.append("thuocTinhMoRong.donViTinh", hang.getDvt())
+                        .append("thuocTinhMoRong.maLoai", hang.getMaLoai())
+                        .append("thuocTinhMoRong.maViTri", hang.getMaViTri())
+                        .append("thuocTinhMoRong.hanMucTonToiThieu", hang.getHanMucTonToiThieu());
+                collection.updateOne(Filters.eq("maHang", hang.getMaHang()),
+                        new Document("$set", duLieu).append("$setOnInsert",
+                                new Document("maHang", hang.getMaHang()).append("tags", new ArrayList<String>())),
+                        new UpdateOptions().upsert(true));
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to sync product profile " + hang.getMaHang() + ": " + e.getMessage());
+        }
+    }
+
+    public void xoaHoSoMau() {
+        if (collection == null) return;
+        try {
+            collection.deleteMany(Filters.in("maHang", "HH001", "HH002", "HH003"));
+        } catch (Exception e) {
+            System.err.println("Failed to remove sample profiles: " + e.getMessage());
+        }
     }
 }

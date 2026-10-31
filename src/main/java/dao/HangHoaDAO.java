@@ -5,15 +5,18 @@ import model.HangHoa;
 import nosql.redis.CacheService;
 import nosql.elasticsearch.HangHoaSearchService;
 import nosql.mongo.NhatKyThaoTacRepository;
+import nosql.mongo.HoSoHangHoaRepository;
 
 import java.lang.reflect.Type;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 
 public class HangHoaDAO {
     private NhatKyThaoTacRepository nhatKyRepo;
@@ -24,6 +27,10 @@ public class HangHoaDAO {
         } catch (Exception e) {
             System.err.println("Failed to initialize NhatKyThaoTacRepository: " + e.getMessage());
         }
+    }
+
+    HangHoaDAO(NhatKyThaoTacRepository nhatKyRepo) {
+        this.nhatKyRepo = nhatKyRepo;
     }
 
     // 1. LẤY DANH SÁCH HÀNG HÓA (JOIN ĐỂ LẤY TÊN LOẠI VÀ TÊN VỊ TRÍ) - CÓ CACHE
@@ -55,6 +62,12 @@ public class HangHoaDAO {
             CacheService.cacheHangHoaAll(list);
         } catch (Exception e) { e.printStackTrace(); }
         return list;
+    }
+
+    public void dongBoHoSoHangHoa(List<HangHoa> hangHoa) {
+        HoSoHangHoaRepository hoSo = new HoSoHangHoaRepository();
+        hoSo.xoaHoSoMau();
+        for (HangHoa hang : hangHoa) hoSo.dongBoHangHoa(hang, true);
     }
 
     // 2. LẤY DANH SÁCH LOẠI HÀNG HÓA ĐỂ ĐỔ VÀO DROPDOWN - CÓ CACHE
@@ -114,35 +127,68 @@ public class HangHoaDAO {
     }
 
     // 5. THÊM MỚI HÀNG HÓA
-    public void themHangHoa(HangHoa hh) {
-        String sql = "INSERT INTO HangHoa (TenHang, DVT, SoLuongTonKho, QuyCach, HanMucTonToiThieu, MaLoai, MaViTri) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = DBConnect.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, hh.getTenHang());
-            ps.setString(2, hh.getDvt());
-            ps.setInt(3, hh.getSoLuongTonKho());
-            ps.setString(4, hh.getQuyCach());
-            ps.setInt(5, hh.getHanMucTonToiThieu());
-            ps.setString(6, hh.getMaLoai());
-            ps.setString(7, hh.getMaViTri());
-            ps.executeUpdate();
+    public boolean themHangHoa(HangHoa hh) {
+        String sql = "INSERT INTO HangHoa (MaHang, TenHang, DVT, SoLuongTonKho, QuyCach, HanMucTonToiThieu, MaLoai, MaViTri) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = DBConnect.getConnection()) {
+            conn.setAutoCommit(false);
+            String maHang;
+            try {
+                maHang = taoMaHang(conn);
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setString(1, maHang);
+                    ps.setString(2, hh.getTenHang());
+                    ps.setString(3, hh.getDvt());
+                    ps.setInt(4, hh.getSoLuongTonKho());
+                    ps.setString(5, hh.getQuyCach());
+                    ps.setInt(6, hh.getHanMucTonToiThieu());
+                    ps.setString(7, hh.getMaLoai());
+                    ps.setString(8, hh.getMaViTri());
+                    if (ps.executeUpdate() != 1) throw new SQLException("Không thêm được hàng hóa");
+                }
+                conn.commit();
+            } catch (Exception e) {
+                try { conn.rollback(); } catch (SQLException rollbackError) { e.addSuppressed(rollbackError); }
+                throw e;
+            }
+            hh.setMaHang(maHang);
 
             CacheService.invalidateHangHoaCache();
+            new HoSoHangHoaRepository().dongBoHangHoa(hh, false);
 
             if (nhatKyRepo != null) {
-                nhatKyRepo.ghiNhatKy("THEM_HANG_HOA", hh.getTenHang(), "system",
+                nhatKyRepo.ghiNhatKy("THEM_HANG_HOA", hh.getMaHang(), "system",
                     "THANH_CONG", "Thêm hàng hóa: " + hh.getTenHang());
             }
+            return true;
         } catch (Exception e) {
             e.printStackTrace();
             if (nhatKyRepo != null) {
                 nhatKyRepo.ghiNhatKy("THEM_HANG_HOA", hh.getTenHang(), "system",
                     "THAT_BAI", "Lỗi: " + e.getMessage());
             }
+            return false;
         }
     }
 
+    // Lock the SP range until INSERT commits so concurrent requests cannot receive the same code.
+    static String taoMaHang(Connection conn) throws SQLException {
+        long max = 0;
+        String sql = "SELECT MaHang FROM HangHoa WITH (UPDLOCK, HOLDLOCK) WHERE MaHang LIKE 'SP%'";
+        try (PreparedStatement ps = conn.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String code = rs.getString("MaHang");
+                if (code != null && code.matches("SP[0-9]{1,18}")) {
+                    max = Math.max(max, Long.parseLong(code.substring(2)));
+                }
+            }
+        }
+        String next = String.format(Locale.ROOT, "SP%02d", max + 1);
+        if (next.length() > 20) throw new SQLException("Đã hết mã hàng hóa SP");
+        return next;
+    }
+
     // 6. SỬA THÔNG TIN HÀNG HÓA
-    public void suaHangHoa(HangHoa hh) {
+    public boolean suaHangHoa(HangHoa hh) {
         String sql = "UPDATE HangHoa SET TenHang=?, DVT=?, SoLuongTonKho=?, QuyCach=?, HanMucTonToiThieu=?, MaLoai=?, MaViTri=? WHERE MaHang=?";
         try (Connection conn = DBConnect.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, hh.getTenHang());
@@ -153,43 +199,58 @@ public class HangHoaDAO {
             ps.setString(6, hh.getMaLoai());
             ps.setString(7, hh.getMaViTri());
             ps.setString(8, hh.getMaHang());
-            ps.executeUpdate();
+            if (ps.executeUpdate() != 1) return false;
 
             CacheService.invalidateHangHoaCache();
+            new HoSoHangHoaRepository().dongBoHangHoa(hh, false);
 
             if (nhatKyRepo != null) {
                 nhatKyRepo.ghiNhatKy("SUA_HANG_HOA", hh.getMaHang(), "system",
                     "THANH_CONG", "Sửa hàng hóa: " + hh.getMaHang() + " - " + hh.getTenHang());
             }
+            return true;
         } catch (Exception e) {
             e.printStackTrace();
             if (nhatKyRepo != null) {
                 nhatKyRepo.ghiNhatKy("SUA_HANG_HOA", hh.getMaHang(), "system",
                     "THAT_BAI", "Lỗi: " + e.getMessage());
             }
+            return false;
         }
     }
 
     // 7. XÓA HÀNG HÓA
     public String xoaHangHoa(String maHang) {
-        String sql = "DELETE FROM HangHoa WHERE MaHang=?";
+        if (maHang == null || maHang.trim().isEmpty()) return "NOT_FOUND";
+        String sql = "DELETE FROM HangHoa WHERE MaHang=? AND SoLuongTonKho=0";
         try (Connection conn = DBConnect.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, maHang);
-            ps.executeUpdate();
+            if (ps.executeUpdate() != 1) {
+                try (PreparedStatement check = conn.prepareStatement("SELECT 1 FROM HangHoa WHERE MaHang=?")) {
+                    check.setString(1, maHang);
+                    try (ResultSet rs = check.executeQuery()) {
+                        return rs.next() ? "STOCK" : "NOT_FOUND";
+                    }
+                }
+            }
 
             CacheService.invalidateHangHoaCache();
+            new HoSoHangHoaRepository().xoaHoSo(maHang);
 
             if (nhatKyRepo != null) {
                 nhatKyRepo.ghiNhatKy("XOA_HANG_HOA", maHang, "system",
                     "THANH_CONG", "Xóa hàng hóa: " + maHang);
             }
             return "SUCCESS";
-        } catch (Exception e) {
+        } catch (SQLException e) {
             if (nhatKyRepo != null) {
                 nhatKyRepo.ghiNhatKy("XOA_HANG_HOA", maHang, "system",
                     "THAT_BAI", "Lỗi: " + e.getMessage());
             }
-            return "LỖI: Không thể xóa mặt hàng này vì đã có lịch sử Nhập/Xuất kho liên quan!";
+            return e.getErrorCode() == 547 ? "RELATED" : "ERROR";
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "ERROR";
         }
     }
 // ==========================================================================

@@ -5,7 +5,6 @@ import model.PhieuXuatDTO;
 import nosql.mongo.NhatKyThaoTacRepository;
 import nosql.redis.CacheService;
 
-import java.sql.CallableStatement;
 import java.sql.Connection;
 
 import java.sql.PreparedStatement;
@@ -13,6 +12,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class PhieuXuatDAO {
 
@@ -33,11 +33,17 @@ public class PhieuXuatDAO {
     public String luuPhieuXuatMoi(PhieuXuatKho px, String tenDangNhapThuKho, String[] maHangArr, String[] soLuongArr, String[] donGiaArr) {
         Connection conn = null;
         try {
+            if (maHangArr == null || soLuongArr == null || donGiaArr == null
+                    || maHangArr.length == 0 || maHangArr.length != soLuongArr.length
+                    || maHangArr.length != donGiaArr.length) {
+                return "Danh sách mặt hàng xuất không hợp lệ.";
+            }
             Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
             conn = DBConnect.getConnection();
             
             // TẮT AUTO COMMIT để gộp chung 2 thao tác (Lưu phiếu và Lưu chi tiết) vào 1 Giao dịch
             conn.setAutoCommit(false);
+            px.setMaPhieu(taoMaPhieu(conn));
 
             // 1. LƯU THÔNG TIN CHUNG VÀO BẢNG PhieuXuatKho (Trạng thái chờ duyệt -> MaNguoiDuyet = NULL)
             String sqlPhieu = "INSERT INTO PhieuXuatKho (MaPhieu, NgayLap, MaNV, MaDeNghi, BoPhanNhan, MucDich, MaNguoiDuyet) "
@@ -59,17 +65,31 @@ public class PhieuXuatDAO {
                 ps.executeUpdate();
             }
 
-            // 2. LƯU CHI TIẾT & TRỪ TỒN KHO BẰNG PROCEDURE
-            String sqlChiTiet = "{CALL SP_LapChiTietPhieuXuat(?, ?, ?, ?)}";
-            try (CallableStatement cs = conn.prepareCall(sqlChiTiet)) {
+            // Trừ tồn và lưu chi tiết trên cùng connection/database với phiếu xuất.
+            String sqlTruTon = "UPDATE HangHoa SET SoLuongTonKho = SoLuongTonKho - ? "
+                    + "WHERE MaHang = ? AND SoLuongTonKho >= ?";
+            String sqlChiTiet = "INSERT INTO ChiTietPhieuXuatKho (MaPhieu, MaHang, SoLuong, DonGia) VALUES (?, ?, ?, ?)";
+            try (PreparedStatement truTon = conn.prepareStatement(sqlTruTon);
+                 PreparedStatement chiTiet = conn.prepareStatement(sqlChiTiet)) {
                 for (int i = 0; i < maHangArr.length; i++) {
-                    cs.setString(1, px.getMaPhieu());
-                    cs.setString(2, maHangArr[i]);
-                    cs.setInt(3, Integer.parseInt(soLuongArr[i]));
-                    cs.setDouble(4, Double.parseDouble(donGiaArr[i]));
-                    
-                    // Thực thi Procedure. Nếu thiếu hàng, nó sẽ văng lỗi RAISERROR tại đây
-                    cs.executeUpdate(); 
+                    int soLuong = Integer.parseInt(soLuongArr[i]);
+                    double donGia = Double.parseDouble(donGiaArr[i]);
+                    if (maHangArr[i] == null || maHangArr[i].trim().isEmpty() || soLuong <= 0
+                            || !Double.isFinite(donGia) || donGia < 0) {
+                        throw new IllegalArgumentException("Mã hàng, số lượng hoặc đơn giá không hợp lệ.");
+                    }
+                    truTon.setInt(1, soLuong);
+                    truTon.setString(2, maHangArr[i]);
+                    truTon.setInt(3, soLuong);
+                    if (truTon.executeUpdate() != 1)
+                        throw new IllegalArgumentException("Mặt hàng " + maHangArr[i] + " không tồn tại hoặc không đủ tồn kho.");
+
+                    chiTiet.setString(1, px.getMaPhieu());
+                    chiTiet.setString(2, maHangArr[i]);
+                    chiTiet.setInt(3, soLuong);
+                    chiTiet.setDouble(4, donGia);
+                    if (chiTiet.executeUpdate() != 1)
+                        throw new SQLException("Không lưu được chi tiết phiếu xuất.");
                 }
             }
 
@@ -96,6 +116,9 @@ public class PhieuXuatDAO {
             }
             return e.getMessage();
         } catch (Exception e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException rollbackError) { e.addSuppressed(rollbackError); }
+            }
             e.printStackTrace();
             if (nhatKyRepo != null) {
                 nhatKyRepo.ghiNhatKy("LAP_PHIEU_XUAT", px.getMaPhieu(), tenDangNhapThuKho,
@@ -110,6 +133,26 @@ public class PhieuXuatDAO {
                 } catch (SQLException e) { e.printStackTrace(); }
             }
         }
+    }
+
+    public String maPhieuTiepTheo() throws Exception {
+        try (Connection conn = DBConnect.getConnection()) {
+            return taoMaPhieu(conn);
+        }
+    }
+
+    private String taoMaPhieu(Connection conn) throws SQLException {
+        int max = 0;
+        String sql = "SELECT MaPhieu FROM PhieuXuatKho WITH (UPDLOCK, HOLDLOCK)";
+        try (PreparedStatement ps = conn.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String ma = rs.getString(1);
+                if (ma != null && ma.matches("PX[0-9]{3}"))
+                    max = Math.max(max, Integer.parseInt(ma.substring(2)));
+            }
+        }
+        if (max >= 999) throw new SQLException("Đã hết mã phiếu xuất PX001-PX999");
+        return String.format(Locale.ROOT, "PX%03d", max + 1);
     }
 
     // ==============================================================================

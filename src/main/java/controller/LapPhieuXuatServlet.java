@@ -1,6 +1,7 @@
 package controller;
 
 import dao.HangHoaDAO;
+import dao.PhieuXuatDAO;
 import model.HangHoa;
 import model.taikhoan;
 import java.io.IOException;
@@ -30,9 +31,11 @@ public class LapPhieuXuatServlet extends HttpServlet {
         }
 
         // 2. TỰ ĐỘNG SINH MÃ PHIẾU XUẤT (VD: PX_260602_143005)
-        String timeStamp = new java.text.SimpleDateFormat("yyMMdd_HHmmss").format(new java.util.Date());
-        String maPhieuAuto = "PX_" + timeStamp;
-        request.setAttribute("maPhieuAuto", maPhieuAuto);
+        try {
+            request.setAttribute("maPhieuAuto", new PhieuXuatDAO().maPhieuTiepTheo());
+        } catch (Exception e) {
+            request.setAttribute("thongBaoLoi", "Không lấy được mã phiếu xuất: " + e.getMessage());
+        }
 
         // 3. Lấy danh sách Hàng Hóa để đổ vào cái khung Dropdown chọn hàng
         HangHoaDAO dao = new HangHoaDAO();

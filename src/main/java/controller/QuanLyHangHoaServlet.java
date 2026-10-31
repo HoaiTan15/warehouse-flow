@@ -2,8 +2,6 @@ package controller;
 
 import dao.HangHoaDAO;
 import model.HangHoa;
-import nosql.mongo.NhatKyThaoTacRepository;
-import nosql.redis.CacheService;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -16,16 +14,10 @@ import java.io.IOException;
 public class QuanLyHangHoaServlet extends HttpServlet {
 
     private HangHoaDAO hangHoaDAO;
-    private NhatKyThaoTacRepository nhatKyRepo;
 
     @Override
     public void init() throws ServletException {
         hangHoaDAO = new HangHoaDAO();
-        try {
-            nhatKyRepo = new NhatKyThaoTacRepository();
-        } catch (Exception e) {
-            System.err.println("Failed to initialize NhatKyThaoTacRepository: " + e.getMessage());
-        }
     }
 
     @Override
@@ -50,6 +42,8 @@ public class QuanLyHangHoaServlet extends HttpServlet {
 
         if ("delete".equals(action)) {
             xoaHangHoa(request, response);
+        } else {
+            response.sendRedirect("LoadDanhSachKhoServlet");
         }
     }
 
@@ -59,9 +53,9 @@ public class QuanLyHangHoaServlet extends HttpServlet {
             String maHang = request.getParameter("maHang");
             String tenHang = request.getParameter("tenHang");
             String dvt = request.getParameter("dvt");
-            int soLuong = Integer.parseInt(request.getParameter("soLuong"));
+            int soLuong = docSoNguyenKhongAm(request, "soLuongTonKho", 0);
             String quyCach = request.getParameter("quyCach");
-            int hanMuc = Integer.parseInt(request.getParameter("hanMuc"));
+            int hanMuc = docSoNguyenKhongAm(request, "hanMucTonToiThieu", null);
             String maLoai = request.getParameter("maLoai");
             String maViTri = request.getParameter("maViTri");
 
@@ -75,8 +69,10 @@ public class QuanLyHangHoaServlet extends HttpServlet {
             hh.setMaLoai(maLoai);
             hh.setMaViTri(maViTri);
 
-            hangHoaDAO.themHangHoa(hh);
-            response.sendRedirect("LoadDanhSachKhoServlet?success=add");
+            boolean success = hangHoaDAO.themHangHoa(hh);
+            response.sendRedirect("LoadDanhSachKhoServlet?" + (success ? "success=add" : "error=add"));
+        } catch (IllegalArgumentException e) {
+            response.sendRedirect("LoadDanhSachKhoServlet?error=invalid");
         } catch (Exception e) {
             e.printStackTrace();
             response.sendRedirect("LoadDanhSachKhoServlet?error=exception");
@@ -89,9 +85,9 @@ public class QuanLyHangHoaServlet extends HttpServlet {
             String maHang = request.getParameter("maHang");
             String tenHang = request.getParameter("tenHang");
             String dvt = request.getParameter("dvt");
-            int soLuong = Integer.parseInt(request.getParameter("soLuong"));
+            int soLuong = docSoNguyenKhongAm(request, "soLuongTonKho", null);
             String quyCach = request.getParameter("quyCach");
-            int hanMuc = Integer.parseInt(request.getParameter("hanMuc"));
+            int hanMuc = docSoNguyenKhongAm(request, "hanMucTonToiThieu", null);
             String maLoai = request.getParameter("maLoai");
             String maViTri = request.getParameter("maViTri");
 
@@ -105,45 +101,36 @@ public class QuanLyHangHoaServlet extends HttpServlet {
             hh.setMaLoai(maLoai);
             hh.setMaViTri(maViTri);
 
-            hangHoaDAO.suaHangHoa(hh);
-            response.sendRedirect("LoadDanhSachKhoServlet?success=edit");
+            boolean success = hangHoaDAO.suaHangHoa(hh);
+            response.sendRedirect("LoadDanhSachKhoServlet?" + (success ? "success=edit" : "error=edit"));
+        } catch (IllegalArgumentException e) {
+            response.sendRedirect("LoadDanhSachKhoServlet?error=invalid");
         } catch (Exception e) {
             e.printStackTrace();
             response.sendRedirect("LoadDanhSachKhoServlet?error=exception");
         }
     }
 
+    private int docSoNguyenKhongAm(HttpServletRequest request, String tenTruong, Integer macDinh) {
+        String value = request.getParameter(tenTruong);
+        if (value == null || value.trim().isEmpty()) {
+            if (macDinh != null) return macDinh;
+            throw new IllegalArgumentException("Thiếu " + tenTruong);
+        }
+        int number = Integer.parseInt(value.trim());
+        if (number < 0) throw new IllegalArgumentException(tenTruong + " phải không âm");
+        return number;
+    }
+
     private void xoaHangHoa(HttpServletRequest request, HttpServletResponse response)
             throws IOException {
         try {
             String maHang = request.getParameter("id");
-            String soLuong = request.getParameter("sl");
-
-            // Kiểm tra số lượng tồn kho
-            if (soLuong != null && Integer.parseInt(soLuong) > 0) {
-                response.sendRedirect("LoadDanhSachKhoServlet?error=stock");
-                return;
-            }
-
-            boolean success = "SUCCESS".equals(hangHoaDAO.xoaHangHoa(maHang));
-
-            if (success) {
-                // Ghi nhật ký MongoDB
-                if (nhatKyRepo != null) {
-                    try {
-                        nhatKyRepo.ghiNhatKy("XOA_HANG_HOA", maHang, "SYSTEM", "THANH_CONG", "Xóa hàng hóa: " + maHang);
-                    } catch (Exception e) {
-                        System.err.println("Failed to log to MongoDB: " + e.getMessage());
-                    }
-                }
-
-                // Xóa cache Redis
-                CacheService.invalidateHangHoaCache();
-
-                response.sendRedirect("LoadDanhSachKhoServlet?success=delete");
-            } else {
-                response.sendRedirect("LoadDanhSachKhoServlet?error=delete");
-            }
+            String result = hangHoaDAO.xoaHangHoa(maHang);
+            if ("SUCCESS".equals(result)) response.sendRedirect("LoadDanhSachKhoServlet?success=delete");
+            else if ("STOCK".equals(result)) response.sendRedirect("LoadDanhSachKhoServlet?error=stock");
+            else if ("RELATED".equals(result)) response.sendRedirect("LoadDanhSachKhoServlet?error=related");
+            else response.sendRedirect("LoadDanhSachKhoServlet?error=delete");
         } catch (Exception e) {
             e.printStackTrace();
             response.sendRedirect("LoadDanhSachKhoServlet?error=exception");
