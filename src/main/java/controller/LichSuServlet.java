@@ -25,6 +25,17 @@ public class LichSuServlet extends HttpServlet {
         // Đã sửa: Bắt đúng tên tham số từ URL
         String maHangLoc = request.getParameter("maHangLoc");
 
+        // Truy vết chuỗi cung ứng bằng Neo4j Graph Database nếu có mã hàng
+        if (maHangLoc != null && !maHangLoc.trim().isEmpty()) {
+            try {
+                nosql.neo4j.WarehouseGraphService graphService = new nosql.neo4j.WarehouseGraphService();
+                model.SupplyChainTraceDTO traceData = graphService.traceSupplyChain(maHangLoc);
+                request.setAttribute("traceData", traceData);
+            } catch (Exception graphEx) {
+                System.err.println("Neo4j traceSupplyChain error: " + graphEx.getMessage());
+            }
+        }
+
         try (Connection conn = DBConnect.getConnection()) {
             request.setAttribute("danhSachHH", new HangHoaDAO().getAllHangHoa());
             

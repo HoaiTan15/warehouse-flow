@@ -20,6 +20,10 @@ public class DBConnect {
         Path path = Paths.get(System.getProperty("warehouse.config", "config.properties"));
         if (Files.exists(path)) {
             try (InputStream in = Files.newInputStream(path)) { config.load(in); }
+        } else {
+            try (InputStream in = DBConnect.class.getClassLoader().getResourceAsStream("config.properties")) {
+                if (in != null) config.load(in);
+            } catch (Exception ignored) {}
         }
         String url = setting(config, "SQLSERVER_URL", "sqlserver.url",
                 "jdbc:sqlserver://localhost;databaseName=QuanLyKhoHang;encrypt=false;trustServerCertificate=true");

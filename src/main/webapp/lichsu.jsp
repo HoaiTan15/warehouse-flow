@@ -3,6 +3,7 @@
 <%@ page import="model.taikhoan" %>
 <%@ page import="model.HangHoa" %>
 <%@ page import="model.LichSuDTO" %>
+<%@ page import="model.SupplyChainTraceDTO" %>
 <%
  // 1. KÉO THÔNG TIN TÀI KHOẢN TỪ SESSION 
     taikhoan acc = (taikhoan) session.getAttribute("account");
@@ -17,12 +18,16 @@
     boolean showBaoCao       = role.equalsIgnoreCase("Thủ kho") || role.equalsIgnoreCase("Trưởng kho") || role.equalsIgnoreCase("Giám đốc") || role.equalsIgnoreCase("Admin") || role.equalsIgnoreCase("Kế toán");
     boolean showLichSu       = role.equalsIgnoreCase("Thủ kho") || role.equalsIgnoreCase("Trưởng kho") || role.equalsIgnoreCase("Giám đốc") || role.equalsIgnoreCase("Admin") || role.equalsIgnoreCase("Kế toán") ;
     boolean showKeToan       = role.equalsIgnoreCase("Kế toán") || role.equalsIgnoreCase("Giám đốc");
+
+    SupplyChainTraceDTO traceData = (SupplyChainTraceDTO) request.getAttribute("traceData");
 %>
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Lịch Sử Kho Hàng - WMS</title>
+    <!-- Thư viện vis-network trực quan hóa đồ thị Neo4j -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
         body { display: flex; background-color: #f5f6f8; height: 100vh; overflow: hidden; }
@@ -47,6 +52,21 @@
         .form-control { padding: 10px; border: 1px solid #dcdde1; border-radius: 5px; font-size: 14px; outline: none; min-width: 300px; }
         .btn-filter { background-color: #f8f9fa; border: 1px solid #dcdde1; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; color: #333;}
         .btn-filter:hover { background-color: #e9ecef; }
+
+        /* SƠ ĐỒ ĐỒ THỊ NEO4J TRUY VẾT CHUỖI CUNG ỨNG */
+        .trace-card { background: white; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); border: 1px solid #e1e5eb; margin-bottom: 25px; overflow: hidden; }
+        .trace-header { padding: 15px 20px; background: #2c3e50; color: white; display: flex; justify-content: space-between; align-items: center; }
+        .trace-header h3 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0; }
+        .neo4j-pill { background-color: #008cc1; color: white; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: bold; }
+        .trace-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; padding: 15px 20px; background: #fdfefe; border-bottom: 1px solid #eee; }
+        .trace-box { padding: 12px 15px; border-radius: 8px; background: #f8f9fa; border-left: 4px solid #3498db; }
+        .trace-box.ncc { border-left-color: #2980b9; }
+        .trace-box.vitri { border-left-color: #27ae60; }
+        .trace-box.xuat { border-left-color: #8e44ad; }
+        .trace-box-title { font-size: 11px; text-transform: uppercase; color: #888; font-weight: bold; margin-bottom: 4px; }
+        .trace-box-val { font-size: 14px; font-weight: bold; color: #2c3e50; }
+        .trace-box-sub { font-size: 12px; color: #666; margin-top: 3px; }
+        #networkCanvas { width: 100%; height: 350px; background-color: #fbfcfd; border-top: 1px solid #eee; }
 
         .table-card { background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); border: 1px solid #eee; overflow: hidden; }
         table { width: 100%; border-collapse: collapse; }
@@ -110,15 +130,15 @@
 
         <div class="content-body">
             <div class="page-header">
-                <div class="page-title"><span>🕒</span> Lịch Sử Biến Động Tồn Kho</div>
-                <div class="page-subtitle">Sổ kho ghi lại mọi thay đổi số lượng tồn kho theo thời gian</div>
+                <div class="page-title"><span>🕒</span> Lịch Sử Biến Động & Truy Vết Chuỗi Cung Ứng</div>
+                <div class="page-subtitle">Kết hợp SQL Server (Lịch sử giao dịch) & Neo4j Graph Database (Đồ thị hành trình hàng hóa)</div>
             </div>
 
             <form action="LichSuServlet" method="GET" class="filter-card">
                 <span style="font-size: 18px; color: #888;">⚲</span>
                 <% String maHangLoc = (String) request.getAttribute("maHangHienTai"); %>
                 <select name="maHangLoc" class="form-control" onchange="this.form.submit()">
-                    <option value="">-- Tất cả mặt hàng --</option>
+                    <option value="">-- Chọn mặt hàng để xem đồ thị chuỗi cung ứng --</option>
                     <%
                         List<HangHoa> listHH = (List<HangHoa>) request.getAttribute("danhSachHH");
                         if(listHH != null) {
@@ -130,8 +150,80 @@
                         } 
                     %>
                 </select>
-                <noscript><button type="submit" class="btn-filter">Lọc</button></noscript>
+                <noscript><button type="submit" class="btn-filter">Xem Truy Vết</button></noscript>
             </form>
+
+            <%-- KHỐI HIỂN THỊ ĐỒ THỊ CHUỖI CUNG ỨNG NEO4J --%>
+            <% if (traceData != null) { %>
+            <div class="trace-card">
+                <div class="trace-header">
+                    <h3>🕸️ Sơ Đồ Mạng Lưới Chuỗi Cung Ứng: <%= traceData.getMaHang() %> - <%= traceData.getTenHang() %></h3>
+                    <span class="neo4j-pill">Neo4j Graph Cypher</span>
+                </div>
+                <div class="trace-grid">
+                    <div class="trace-box ncc">
+                        <div class="trace-box-title">🏢 Nguồn Gốc (Nhà Cung Cấp)</div>
+                        <div class="trace-box-val"><%= traceData.getTenNCC() != null ? traceData.getTenNCC() : "Chưa liên kết" %></div>
+                        <div class="trace-box-sub">SĐT: <%= traceData.getSdtNCC() != null ? traceData.getSdtNCC() : "—" %></div>
+                    </div>
+                    <div class="trace-box vitri">
+                        <div class="trace-box-title">📍 Vị Trí Lưu Kho Hiện Tại</div>
+                        <div class="trace-box-val"><%= traceData.getTenViTri() != null ? traceData.getTenViTri() : "Chưa xếp kệ" %></div>
+                        <div class="trace-box-sub">Mã kệ: <%= traceData.getMaViTri() != null ? traceData.getMaViTri() : "—" %></div>
+                    </div>
+                    <div class="trace-box xuat">
+                        <div class="trace-box-title">👥 Phân Phối Đã Xuất</div>
+                        <div class="trace-box-val"><%= traceData.getDanhSachXuat().size() %> đợt xuất</div>
+                        <div class="trace-box-sub"><%= traceData.getDanhSachXuat().isEmpty() ? "Chưa xuất lần nào" : traceData.getDanhSachXuat().get(0).getBoPhan() %></div>
+                    </div>
+                </div>
+                <div id="networkCanvas"></div>
+                <div style="padding: 10px 20px; font-size: 12px; color: #7f8c8d; background: #fafbfc; border-top: 1px solid #eee;">
+                    💡 <b>Mẹo tương tác:</b> Kéo thả các nút, lăn chuột để Zoom in/out hoặc phóng to để xem chi tiết các mối quan hệ đồ thị.
+                </div>
+            </div>
+
+            <script type="text/javascript">
+                (function() {
+                    var container = document.getElementById('networkCanvas');
+                    var graphData = <%= traceData.toJsonGraph() %>;
+                    
+                    var options = {
+                        nodes: {
+                            shape: 'box',
+                            margin: 10,
+                            font: { size: 14, face: 'Segoe UI' },
+                            borderWidth: 2,
+                            shadow: true
+                        },
+                        edges: {
+                            font: { size: 11, align: 'middle', background: 'white' },
+                            arrows: { to: { enabled: true, scaleFactor: 1.0 } },
+                            smooth: { type: 'cubicBezier', roundness: 0.2 },
+                            shadow: true
+                        },
+                        physics: {
+                            stabilization: true,
+                            barnesHut: { gravitationalConstant: -3000, springLength: 150 }
+                        },
+                        interaction: {
+                            hover: true,
+                            navigationButtons: true,
+                            keyboard: false
+                        }
+                    };
+
+                    if (container && graphData.nodes && graphData.nodes.length > 0) {
+                        new vis.Network(container, graphData, options);
+                    }
+                })();
+            </script>
+            <% } else if (maHangLoc != null && !maHangLoc.trim().isEmpty()) { %>
+            <div style="background: #eaf4fc; border: 1px solid #bee5eb; color: #0c5460; padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; font-size: 13px;">
+                ℹ️ <b>Thông báo đồ thị:</b> Chưa tìm thấy dữ liệu liên kết Neo4j cho mặt hàng <b><%= maHangLoc %></b> (hoặc Neo4j chưa khởi động). 
+                Dữ liệu lịch sử giao dịch bên dưới vẫn được truy vấn bình thường từ SQL Server.
+            </div>
+            <% } %>
 
             <div class="table-card">
                 <table>

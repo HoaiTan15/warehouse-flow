@@ -82,19 +82,36 @@ public class PhieuNhapDAO {
             }
 
             // Bước 2: Lưu các mặt hàng 
+            double tongTien = 0.0;
             String sqlChiTiet = "INSERT INTO ChiTietPhieuNhapKho (MaPhieu, MaHang, SoLuong, DonGia) VALUES (?, ?, ?, ?)";
             try (PreparedStatement ps = conn.prepareStatement(sqlChiTiet)) {
                 for (int i = 0; i < maHangArr.length; i++) {
+                    int sl = Integer.parseInt(soLuongArr[i]);
+                    double dg = Double.parseDouble(donGiaArr[i]);
+                    tongTien += sl * dg;
+
                     ps.setString(1, pn.getMaPhieu());
                     ps.setString(2, maHangArr[i]);
-                    ps.setInt(3, Integer.parseInt(soLuongArr[i]));
-                    ps.setDouble(4, Double.parseDouble(donGiaArr[i]));
+                    ps.setInt(3, sl);
+                    ps.setDouble(4, dg);
                     ps.executeUpdate(); 
                 }
             }
 
             conn.commit();
             CacheService.invalidateHangHoaCache();
+
+            // Đẩy giao dịch nhập kho vào Redis Stream và cập nhật thống kê ngày
+            try {
+                new nosql.redis.WarehouseRedisService().pushTransaction(new model.TransactionFeedItem(
+                    pn.getMaPhieu(), "NHAP", tenDangNhapThuKho, tongTien,
+                    maHangArr != null ? maHangArr.length : 0, null,
+                    "Nhập kho từ NCC: " + (pn.getMaNCC() != null ? pn.getMaNCC() : "") +
+                    (pn.getGhiChu() != null && !pn.getGhiChu().isEmpty() ? " - " + pn.getGhiChu() : "")
+                ));
+            } catch (Exception redisEx) {
+                System.err.println("Redis pushTransaction failed: " + redisEx.getMessage());
+            }
 
             if (nhatKyRepo != null) {
                 nhatKyRepo.ghiNhatKy("LAP_PHIEU_NHAP", pn.getMaPhieu(), tenDangNhapThuKho,

@@ -66,6 +66,7 @@ public class PhieuXuatDAO {
             }
 
             // Trừ tồn và lưu chi tiết trên cùng connection/database với phiếu xuất.
+            double tongTien = 0.0;
             String sqlTruTon = "UPDATE HangHoa SET SoLuongTonKho = SoLuongTonKho - ? "
                     + "WHERE MaHang = ? AND SoLuongTonKho >= ?";
             String sqlChiTiet = "INSERT INTO ChiTietPhieuXuatKho (MaPhieu, MaHang, SoLuong, DonGia) VALUES (?, ?, ?, ?)";
@@ -78,6 +79,8 @@ public class PhieuXuatDAO {
                             || !Double.isFinite(donGia) || donGia < 0) {
                         throw new IllegalArgumentException("Mã hàng, số lượng hoặc đơn giá không hợp lệ.");
                     }
+                    tongTien += soLuong * donGia;
+
                     truTon.setInt(1, soLuong);
                     truTon.setString(2, maHangArr[i]);
                     truTon.setInt(3, soLuong);
@@ -97,6 +100,18 @@ public class PhieuXuatDAO {
             conn.commit();
 
             CacheService.invalidateHangHoaCache();
+
+            // Đẩy giao dịch xuất kho vào Redis Stream và cập nhật thống kê ngày
+            try {
+                new nosql.redis.WarehouseRedisService().pushTransaction(new model.TransactionFeedItem(
+                    px.getMaPhieu(), "XUAT", tenDangNhapThuKho, tongTien,
+                    maHangArr != null ? maHangArr.length : 0, null,
+                    "Xuất kho cho: " + (px.getBoPhanNhan() != null ? px.getBoPhanNhan() : "") +
+                    (px.getMucDich() != null && !px.getMucDich().isEmpty() ? " - " + px.getMucDich() : "")
+                ));
+            } catch (Exception redisEx) {
+                System.err.println("Redis pushTransaction failed: " + redisEx.getMessage());
+            }
 
             if (nhatKyRepo != null) {
                 nhatKyRepo.ghiNhatKy("LAP_PHIEU_XUAT", px.getMaPhieu(), tenDangNhapThuKho,

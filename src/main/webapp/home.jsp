@@ -1,5 +1,11 @@
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 <%@ page import="model.taikhoan" %>
+<%@ page import="model.DailyWarehouseStats" %>
+<%@ page import="model.TransactionFeedItem" %>
+<%@ page import="nosql.redis.WarehouseRedisService" %>
+<%@ page import="java.util.List" %>
+<%@ page import="java.text.NumberFormat" %>
+<%@ page import="java.util.Locale" %>
 <%
     // 1. LẤY THÔNG TIN TÀI KHOẢN TỪ SESSION
     taikhoan acc = (taikhoan) session.getAttribute("account");
@@ -14,6 +20,12 @@
     boolean showCongNo     = role.equalsIgnoreCase("Kế toán") || role.equalsIgnoreCase("Giám đốc") || role.equalsIgnoreCase("Admin"); // MỚI
     boolean showTaiKhoan   = role.equalsIgnoreCase("Admin");
     boolean showDuyetKiemKe = role.equalsIgnoreCase("Kế toán") || role.equalsIgnoreCase("Giám đốc");
+
+    // 3. LẤY DỮ LIỆU THỐNG KÊ VÀ HOẠT ĐỘNG GẦN ĐÂY TỪ REDIS
+    WarehouseRedisService redisService = new WarehouseRedisService();
+    DailyWarehouseStats redisStats = redisService.getDailyStats(null);
+    List<TransactionFeedItem> redisFeed = redisService.getRecentTransactions(8);
+    NumberFormat currencyFormat = NumberFormat.getInstance(new Locale("vi", "VN"));
 %>
 <!DOCTYPE html>
 <html>
@@ -31,9 +43,10 @@
         .btn-logout:hover { background-color: #c0392b; }
 
         .main-container { max-width: 1200px; margin: 30px auto; padding: 0 20px; }
-        .section-header { font-size: 22px; font-weight: bold; margin-bottom: 20px; color: #2c3e50; }
+        .section-header { font-size: 22px; font-weight: bold; margin-bottom: 20px; color: #2c3e50; display: flex; align-items: center; justify-content: space-between; }
+        .redis-tag { font-size: 11px; background-color: #d63031; color: white; padding: 3px 8px; border-radius: 12px; font-weight: normal; vertical-align: middle; margin-left: 8px; }
 
-        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 40px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px; }
         .stat-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; align-items: center; border: 1px solid #e1e5eb; border-left: 5px solid #3498db; }
         .stat-card.green { border-left-color: #2ecc71; }
         .stat-card.orange { border-left-color: #f39c12; }
@@ -44,7 +57,18 @@
         .stat-icon.orange-bg { background-color: #fdf5e7; color: #f39c12; }
         .stat-icon.red-bg { background-color: #fdedec; color: #e74c3c; }
         .stat-info h4 { font-size: 13px; color: #7f8c8d; text-transform: uppercase; margin-bottom: 5px; }
-        .stat-info p { font-size: 26px; font-weight: bold; color: #2c3e50; }
+        .stat-info p { font-size: 24px; font-weight: bold; color: #2c3e50; }
+        .stat-sub { font-size: 12px; color: #888; margin-top: 3px; }
+
+        /* Bảng hoạt động Redis */
+        .feed-container { background: white; padding: 20px; border-radius: 12px; border: 1px solid #e1e5eb; margin-bottom: 40px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); }
+        .feed-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+        .feed-table th { background-color: #f8f9fa; color: #636e72; padding: 12px 15px; text-align: left; border-bottom: 2px solid #e1e5eb; font-weight: 600; }
+        .feed-table td { padding: 12px 15px; border-bottom: 1px solid #f1f2f6; }
+        .feed-table tr:hover { background-color: #fcfcfd; }
+        .badge-nhap { background: #e8f8f0; color: #27ae60; padding: 3px 10px; border-radius: 12px; font-weight: bold; font-size: 11px; }
+        .badge-xuat { background: #fef5e7; color: #e67e22; padding: 3px 10px; border-radius: 12px; font-weight: bold; font-size: 11px; }
+        .empty-feed { text-align: center; color: #95a5a6; padding: 25px 0; font-style: italic; }
 
         .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px; }
         .feature-card { background: white; padding: 40px 20px; border-radius: 12px; text-align: center; text-decoration: none; color: #333; box-shadow: 0 4px 10px rgba(0,0,0,0.03); border: 1px solid #e1e5eb; transition: all 0.3s ease; }
@@ -67,27 +91,95 @@
 
     <div class="main-container">
         
-        <h2 class="section-header">Tổng quan hệ thống</h2>
+        <div class="section-header">
+            <span>📊 Thống Kê Trong Ngày <span class="redis-tag">Redis Real-Time Hash</span></span>
+            <span style="font-size: 13px; color: #7f8c8d; font-weight: normal;">Hôm nay: <%= redisStats.getDate() %></span>
+        </div>
         <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon blue-bg">📦</div>
-                <div class="stat-info"><h4>Tổng Hàng Hóa</h4><p>15</p></div>
-            </div>
             <div class="stat-card green">
                 <div class="stat-icon green-bg">📥</div>
-                <div class="stat-info"><h4>Phiếu Nhập Kho</h4><p>83</p></div>
+                <div class="stat-info">
+                    <h4>Nhập Kho Hôm Nay</h4>
+                    <p><%= redisStats.getSoPhieuNhap() %> <span style="font-size: 14px; font-weight: normal; color: #7f8c8d;">phiếu</span></p>
+                    <div class="stat-sub"><%= currencyFormat.format(redisStats.getTongTienNhap()) %> đ</div>
+                </div>
             </div>
             <div class="stat-card orange">
                 <div class="stat-icon orange-bg">📤</div>
-                <div class="stat-info"><h4>Phiếu Xuất Kho</h4><p>98</p></div>
+                <div class="stat-info">
+                    <h4>Xuất Kho Hôm Nay</h4>
+                    <p><%= redisStats.getSoPhieuXuat() %> <span style="font-size: 14px; font-weight: normal; color: #7f8c8d;">phiếu</span></p>
+                    <div class="stat-sub"><%= currencyFormat.format(redisStats.getTongTienXuat()) %> đ</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon blue-bg">⚡</div>
+                <div class="stat-info">
+                    <h4>Tổng Giao Dịch</h4>
+                    <p><%= redisStats.getTongSoPhieu() %> <span style="font-size: 14px; font-weight: normal; color: #7f8c8d;">lượt</span></p>
+                    <div class="stat-sub">Tự động cập nhật 0ms</div>
+                </div>
             </div>
             <div class="stat-card red">
-                <div class="stat-icon red-bg">⚠️</div>
-                <div class="stat-info"><h4>Cần Tạo Đơn Nhập</h4><p>3</p></div>
+                <div class="stat-icon red-bg">💰</div>
+                <div class="stat-info">
+                    <h4>Tổng Giá Trị</h4>
+                    <p style="font-size: 19px;"><%= currencyFormat.format(redisStats.getTongGiaTriGiaoDich()) %> đ</p>
+                    <div class="stat-sub">Lưu in-memory TTL 3 ngày</div>
+                </div>
             </div>
         </div>
 
-        <h2 class="section-header" style="margin-top: 50px; padding-top: 20px; border-top: 2px dashed #dcdde1;">
+        <%-- BẢNG FEED HOẠT ĐỘNG GẦN ĐÂY TỪ REDIS LIST --%>
+        <div class="feed-container">
+            <div class="section-header" style="margin-bottom: 10px;">
+                <span>⚡ Hoạt Động Xuất - Nhập Kho Gần Đây <span class="redis-tag">Redis List LPUSH / LTRIM</span></span>
+                <span style="font-size: 13px; color: #888; font-weight: normal;">Lưu tối đa 50 giao dịch mới nhất</span>
+            </div>
+            <% if (redisFeed == null || redisFeed.isEmpty()) { %>
+                <div class="empty-feed">
+                    Chưa có hoạt động xuất nhập mới trong cache Redis.<br>
+                    <small>(Dữ liệu sẽ tự động xuất hiện tức thì mỗi khi bạn tạo phiếu Nhập hoặc Xuất kho)</small>
+                </div>
+            <% } else { %>
+                <table class="feed-table">
+                    <thead>
+                        <tr>
+                            <th>Thời Gian</th>
+                            <th>Loại</th>
+                            <th>Mã Phiếu</th>
+                            <th>Người Lập</th>
+                            <th>Số Mặt Hàng</th>
+                            <th>Tổng Tiền</th>
+                            <th>Nội Dung / Ghi Chú</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% for (TransactionFeedItem item : redisFeed) { 
+                            boolean isNhap = "NHAP".equalsIgnoreCase(item.getLoaiPhieu());
+                        %>
+                        <tr>
+                            <td style="color: #636e72; font-size: 13px;"><%= item.getThoiGian() %></td>
+                            <td>
+                                <span class="<%= isNhap ? "badge-nhap" : "badge-xuat" %>">
+                                    <%= isNhap ? "📥 NHẬP KHO" : "📤 XUẤT KHO" %>
+                                </span>
+                            </td>
+                            <td><b><%= item.getMaPhieu() %></b></td>
+                            <td><%= item.getNguoiThucHien() != null ? item.getNguoiThucHien() : "—" %></td>
+                            <td><%= item.getSoLuongMatHang() %> mặt hàng</td>
+                            <td style="font-weight: 600; color: <%= isNhap ? "#27ae60" : "#d35400" %>;">
+                                <%= currencyFormat.format(item.getTongTien()) %> đ
+                            </td>
+                            <td style="color: #555;"><%= item.getGhiChu() != null ? item.getGhiChu() : "" %></td>
+                        </tr>
+                        <% } %>
+                    </tbody>
+                </table>
+            <% } %>
+        </div>
+
+        <h2 class="section-header" style="padding-top: 20px; border-top: 2px dashed #dcdde1;">
             Khu Vực Làm Việc (<%= role %>)
         </h2>
 

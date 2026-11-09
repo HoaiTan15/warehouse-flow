@@ -203,6 +203,19 @@
                         </div>
                     </div>
 
+                    <!-- KHỐI GỢI Ý MẶT HÀNG THƯỜNG XUẤT KÈM (NEO4J RECOMMENDATION) -->
+                    <div id="recommendationArea" style="display: none; background: #f0f7ff; border: 1px dashed #3498db; border-radius: 8px; padding: 12px 15px; margin-top: 15px; margin-bottom: 15px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <span id="recTitle" style="font-weight: 600; font-size: 13px; color: #2980b9;">
+                                🤖 Gợi ý từ Neo4j: Các mặt hàng thường được xuất cùng
+                            </span>
+                            <span style="font-size: 11px; background: #008cc1; color: white; padding: 2px 8px; border-radius: 10px; font-weight: bold;">Neo4j Graph Pattern</span>
+                        </div>
+                        <div id="recommendationList" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                            <!-- Sẽ được điền bằng JavaScript qua AJAX -->
+                        </div>
+                    </div>
+
                     <table>
                         <thead>
                             <tr>
@@ -279,16 +292,18 @@
 
             document.getElementById('bangChiTiet').appendChild(tr);
 
-            // Reset form nhỏ
+            // Reset form nhỏ và cập nhật gợi ý cho các mặt hàng trong đơn
             selectBox.value = "";
             document.getElementById('soLuongTam').value = 1;
             document.getElementById('donGiaTam').value = "";
+            capNhatGoiYTheoBang();
         });
 
         // 3. Hàm xóa dòng
         function xoaDong(buttonElement) {
             var tr = buttonElement.parentNode.parentNode;
             tr.parentNode.removeChild(tr);
+            capNhatGoiYTheoBang();
         }
 
         // 4. Kiểm tra trước khi submit
@@ -303,6 +318,79 @@
                 document.getElementById('formPhieuXuat').submit();
             }
         }
+
+        // 5. Gợi ý thông minh từ Neo4j
+        function taiGoiY(maHang, tieuDe) {
+            var recArea = document.getElementById('recommendationArea');
+            var recList = document.getElementById('recommendationList');
+            var recTitle = document.getElementById('recTitle');
+            if (!recArea || !recList) return;
+
+            if (recTitle) recTitle.textContent = tieuDe;
+            recList.innerHTML = '<span style="color:#666; font-size:12px;">⏳ Đang tìm kiếm các mặt hàng xuất cùng từ Neo4j...</span>';
+            recArea.style.display = 'block';
+
+            fetch('GoiYHangXuatServlet?maHang=' + encodeURIComponent(maHang))
+                .then(function(res) { return res.json(); })
+                .then(function(items) {
+                    if (!items || items.length === 0) {
+                        recList.innerHTML = '<span style="color:#888; font-size:12px;">ℹ️ Chưa có mặt hàng nào thường xuất kèm với ' + maHang + ' trong lịch sử.</span>';
+                        return;
+                    }
+
+                    recList.innerHTML = '';
+                    items.forEach(function(item) {
+                        var pill = document.createElement('div');
+                        pill.style.cssText = 'background: white; border: 1px solid #b8daff; border-radius: 20px; padding: 6px 14px; font-size: 13px; display: flex; align-items: center; gap: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);';
+                        pill.innerHTML = '<span>📦 <b>' + item.tenHang + '</b> (' + item.maHang + ') <small style="color:#27ae60; font-weight:bold;">[' + item.soLanXuatCung + ' lần xuất cùng]</small></span>' +
+                            '<button type="button" style="background:#2ecc71; color:white; border:none; border-radius:12px; padding:4px 12px; font-size:12px; font-weight:bold; cursor:pointer;" onclick="chonGoiY(\'' + item.maHang + '\')">➕ Thêm nhanh</button>';
+                        recList.appendChild(pill);
+                    });
+                    recArea.style.display = 'block';
+                })
+                .catch(function(err) {
+                    console.warn('Neo4j recommendation fetch error: ', err);
+                    recArea.style.display = 'none';
+                });
+        }
+
+        function capNhatGoiYTheoBang() {
+            var selectBox = document.getElementById('maHangTam');
+            if (selectBox && selectBox.value) {
+                taiGoiY(selectBox.value, "🤖 Gợi ý từ Neo4j: Các mặt hàng thường được xuất cùng " + selectBox.value);
+                return;
+            }
+
+            var itemsInTable = document.querySelectorAll('#bangChiTiet input[name="maHang[]"]');
+            if (itemsInTable.length > 0) {
+                var lastCode = itemsInTable[itemsInTable.length - 1].value;
+                taiGoiY(lastCode, "💡 Gợi ý thêm cho đơn hàng: Các mặt hàng thường xuất kèm với " + lastCode);
+            } else {
+                var recArea = document.getElementById('recommendationArea');
+                if (recArea) recArea.style.display = 'none';
+            }
+        }
+
+        var selectHang = document.getElementById('maHangTam');
+        if (selectHang) {
+            selectHang.addEventListener('change', function() {
+                var maHang = this.value;
+                if (!maHang) {
+                    capNhatGoiYTheoBang();
+                    return;
+                }
+                taiGoiY(maHang, "🤖 Gợi ý từ Neo4j: Các mặt hàng thường được xuất cùng " + maHang);
+            });
+        }
+
+        window.chonGoiY = function(maHang) {
+            var selectBox = document.getElementById('maHangTam');
+            if (selectBox) {
+                selectBox.value = maHang;
+                selectBox.dispatchEvent(new Event('change'));
+                document.getElementById('soLuongTam').focus();
+            }
+        };
     </script>
 </body>
 </html>
